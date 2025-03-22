@@ -1,0 +1,18 @@
+next.js ver15からdify apiにアクセスするアプリを作ります。
+処理の流れを記載するので必要に応じて指摘してください。
+
+## 初回会話時 
+conversation_idなしでdify apiにアクセス
+dify apiから応答
+応答の中に conversation_idがあるので取得
+urlにconversation_idを付与
+応答を画面出力
+応答の内容をconversationsテーブルとmessagesテーブルに保存
+(トランザクション必要)
+
+## 2回目以降の会話
+conversation_idを付与してdify_apiにアクセス
+dify apiからの応答を画面出力
+応答の内容のうち、total_tokenとtotal_priceをconversationsテーブルに上書き
+messagesテーブルに追加保存
+(トランザクション必要)

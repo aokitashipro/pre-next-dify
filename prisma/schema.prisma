@@ -1,0 +1,167 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ユーザー管理
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  name          String?
+  password      String    // ハッシュ化されたパスワード
+  role          UserRole  @default(USER)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  
+  // リレーション
+  subscription  Subscription?
+  conversations Conversation[]
+  usageStats    UsageStat[]
+  uploadedFiles FileUpload[]
+  
+  @@map("users")
+}
+
+enum UserRole {
+  ADMIN
+  USER
+}
+
+// サブスクリプション管理
+model Subscription {
+  id                   String             @id @default(cuid())
+  userId               String             @unique
+  user                 User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  stripeCustomerId     String?            @unique
+  stripePriceId        String?
+  stripeSubscriptionId String?
+  status               SubscriptionStatus
+  plan                 PlanType           @default(FREE)
+  currentPeriodStart   DateTime?
+  currentPeriodEnd     DateTime?
+  cancelAtPeriodEnd    Boolean            @default(false)
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+
+  @@map("subscriptions")
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  CANCELED
+  EXPIRED
+  TRIAL
+  UNPAID
+}
+
+enum PlanType {
+  FREE
+  PREMIUM
+}
+
+// 使用状況の追跡
+model UsageStat {
+  id              String           @id @default(cuid())
+  userId          String
+  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type            UsageType
+  count           Int              @default(0)
+  tokensUsed      Int              @default(0)
+  period          DateTime         
+  createdAt       DateTime         @default(now())
+
+  @@unique([userId, type, period])
+  @@map("usage_stats")
+}
+
+enum UsageType {
+  TEXT_CHAT
+  VOICE_INPUT
+  VOICE_OUTPUT
+  IMAGE_UPLOAD
+  FILE_UPLOAD
+  WORKFLOW_EXECUTION
+}
+
+// 会話管理
+// idを維持することでPrismaの標準的なリレーション管理が簡単になる
+model Conversation {
+  id                 String    @id @default(cuid())
+  difyConversationId String   @unique    // Dify APIから返される会話ID
+  userId             String
+  user               User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title              String?
+  type               ChatType  @default(TEXT)
+  messages           Message[] // ローカルIDに基づくリレーション
+  totalTokens        Int       @default(0)  // この会話で使用されたトークンの合計
+  totalCost         Float     @default(0)  // この会話のコスト合計
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@unique([difyConversationId, userId])
+  @@map("conversations")
+}
+
+enum ChatType {
+  TEXT
+  VOICE
+  MULTIMODAL
+  WORKFLOW
+}
+
+// メッセージ管理
+// 常にconversionsからmessagesを取得する事で userIdをカット
+model Message {
+  id             String       @id @default(cuid())
+  difyMessageId  String      // Dify APIから返される一意のメッセージID
+  // 会話への参照
+  conversationId     String        // Conversationテーブルの内部ID
+  conversation       Conversation  @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  content        String // 会話自体の内容か
+  role           MessageRole
+  attachments    FileUpload[]
+  metadata       Json?        // API使用状況、トークン数など
+  createdAt      DateTime     @default(now())
+
+  @@map("messages")
+}
+
+enum MessageRole {
+  USER
+  ASSISTANT
+}
+
+// ファイルアップロード管理
+model FileUpload {
+  id        String      @id @default(cuid())
+  userId    String
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messageId String?
+  message   Message?    @relation(fields: [messageId], references: [id])
+  type      FileType
+  name      String
+  path      String      @unique
+  size      Int         // バイト単位
+  mimeType  String
+  metadata  Json?       // 追加のファイル情報
+  createdAt DateTime    @default(now())
+
+  @@map("file_uploads")
+}
+
+enum FileType {
+  DOCUMENT
+  IMAGE
+  AUDIO
+  VIDEO
+}

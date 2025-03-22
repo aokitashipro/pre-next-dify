@@ -1,0 +1,10 @@
+## システム要件
+FE,BE: Next.js version15 TypeScript
+AppRouter
+LLM API: Dify API
+
+## ライブラリ
+Prisma
+sqlite
+shadcn/ui
+
