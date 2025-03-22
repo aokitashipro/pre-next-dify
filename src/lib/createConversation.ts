@@ -1,6 +1,7 @@
 // src/lib/conversation.ts
 import { prisma } from './prisma';
 import { Prisma, MessageRole } from '@prisma/client';
+import { ResourceInfo } from '@/store/chatStore';
 
 interface DifyResponse {
   message_id: string;
@@ -11,7 +12,7 @@ interface DifyResponse {
       total_tokens?: number;
       total_price?: number | string;
     };
-    retriever_resources?: string[];
+    retriever_resources?: any[]; // より詳細な型情報を追加
   };
 }
 
@@ -35,13 +36,21 @@ export async function createConversationAndMessages(
   // Number() 最終的に数値型に戻す
   const totalCost = priceValue ? Number(parseFloat(String(priceValue)).toFixed(10)) : 0;
 
-//   この複雑な処理が必要な理由は：
-
-// APIからの値が文字列または数値のどちらで返ってくるか一貫性がない可能性がある
-// 浮動小数点数の精度の問題を解決するため（特に金額計算では重要）
-// データベースに保存する前に一貫した形式に正規化するため
-
-// この処理によって、どのような形式でデータが返ってきても、常に正確な数値としてデータベースに保存できることが保証されます。
+  // リソース情報を整形
+  const resources: ResourceInfo[] = [];
+  if (difyResponse.metadata?.retriever_resources && Array.isArray(difyResponse.metadata.retriever_resources)) {
+    for (const resource of difyResponse.metadata.retriever_resources) {
+      // リソース情報が適切な形式か確認
+      if (resource && typeof resource === 'object') {
+        resources.push({
+          document_name: String(resource.document_name || ''),
+          segment_position: Number(resource.segment_position || 0),
+          content: String(resource.content || ''),
+          score: Number(resource.score || 0)
+        });
+      }
+    }
+  }
 
   try {
     return await prisma.$transaction(async (tx) => {
@@ -93,7 +102,8 @@ export async function createConversationAndMessages(
                 ...difyResponse.metadata?.usage,
                 total_price: totalCost // 変換後の数値を使用
               },
-              resources: difyResponse.metadata?.retriever_resources || []
+              // 標準化したリソース情報を保存
+              resources: resources.length > 0 ? resources : undefined
             }
           }
         })

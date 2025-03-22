@@ -23,18 +23,26 @@ export default function ChatContainer({ userId, initialMessages = [], conversati
   const [testDialogOpen, setTestDialogOpen] = useState(false);
   // リソース表示用のState - デフォルトで表示
   const [resourcesVisible, setResourcesVisible] = useState(true);
-  // 現在のリソースを固定的に保持
-  const [currentResources, setCurrentResources] = useState<ResourceInfo[] | null>(null);
 
   const { 
     currentMessages, 
     setConversationId,
     clearMessages,
-    addMessage
+    addMessage,
+    conversationResources,
+    getResources,
+    setResources,
+    currentConversationId
   } = useChatStore();
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [initialized, setInitialized] = useState(false);
+  
+  // 現在の会話IDからリソース情報を取得
+  const currentResources = useMemo(() => {
+    if (!currentConversationId) return null;
+    return getResources(currentConversationId);
+  }, [currentConversationId, conversationResources, getResources]);
   
   // 初期化ロジック
   useEffect(() => {
@@ -49,6 +57,13 @@ export default function ChatContainer({ userId, initialMessages = [], conversati
         initialMessages.forEach(message => {
           addMessage(message);
         });
+        
+        // 初期メッセージからリソース情報を抽出して保存
+        const initResources = extractResourcesFromMessages(initialMessages);
+        if (initResources.length > 0) {
+          console.log(`ChatContainer: ${initResources.length}件のリソースを初期化します`);
+          setResources(conversationId, initResources);
+        }
       }
     } else {
       // 新規会話の場合はメッセージをクリア
@@ -56,27 +71,39 @@ export default function ChatContainer({ userId, initialMessages = [], conversati
     }
     
     setInitialized(true);
-  }, [conversationId, initialMessages, setConversationId, clearMessages, addMessage, initialized]);
+  }, [conversationId, initialMessages, setConversationId, clearMessages, addMessage, initialized, setResources]);
 
   // メッセージが追加されたら自動スクロール
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [currentMessages]);
 
-  // メッセージが更新されたら、最新のリソースを探す
+  // メッセージが更新されたら、最新のリソースを探して保存
   useEffect(() => {
-    if (!currentMessages || currentMessages.length === 0) return;
+    if (!currentMessages || currentMessages.length === 0 || !currentConversationId) return;
     
     // アシスタントのメッセージを逆順から探す
     for (let i = currentMessages.length - 1; i >= 0; i--) {
       const message = currentMessages[i];
       if (message.role === 'assistant' && message.resources && message.resources.length > 0) {
         console.log('最新のリソースが見つかりました:', message.resources.length, '件');
-        setCurrentResources(message.resources);
+        // グローバルストアにリソース情報を保存
+        setResources(currentConversationId, message.resources);
         return;
       }
     }
-  }, [currentMessages]);
+  }, [currentMessages, currentConversationId, setResources]);
+
+  // メッセージ配列からリソース情報を抽出するヘルパー関数
+  const extractResourcesFromMessages = (messages: Message[]): ResourceInfo[] => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const message = messages[i];
+      if (message.role === 'assistant' && message.resources && message.resources.length > 0) {
+        return message.resources;
+      }
+    }
+    return [];
+  };
 
   // リソース表示部分（固定位置）
   const renderResourceViewer = () => {

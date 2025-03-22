@@ -3,6 +3,7 @@ import ChatSidebar from "@/components/ChatSidebar";
 import { auth } from '@/auth'
 import { notFound } from 'next/navigation';
 import { getConversation, getConversations, getMessages } from "@/lib/conversation";
+import { ResourceInfo } from "@/store/chatStore";
 
 type Params = {
   params: Promise<{conversationId: string}>
@@ -40,22 +41,43 @@ export default async function ChatPage({ params }: Params ) {
 
   // メッセージをフォーマット
   const formattedMessages = messages.map(message => {
-    let resources = undefined;
+    let resources: ResourceInfo[] | undefined = undefined;
     
+    // メタデータが存在し、オブジェクトの場合に処理
     if (message.metadata && typeof message.metadata === 'object') {
       const metadata = message.metadata as any;
-      if (metadata.retriever_resources) {
-        resources = metadata.retriever_resources;
+      
+      // resourcesプロパティからリソース情報を取得
+      if (metadata.resources && Array.isArray(metadata.resources)) {
+        resources = metadata.resources.map((resource: any) => ({
+          document_name: resource.document_name || '',
+          segment_position: resource.segment_position || 0,
+          content: resource.content || '',
+          score: resource.score || 0
+        }));
       }
+      // 後方互換性のために古い形式もチェック
+      else if (metadata.retriever_resources && Array.isArray(metadata.retriever_resources)) {
+        resources = metadata.retriever_resources.map((resource: any) => ({
+          document_name: resource.document_name || '',
+          segment_position: resource.segment_position || 0,
+          content: resource.content || '',
+          score: resource.score || 0
+        }));
+      }
+    }
+    
+    // デバッグ用ログ
+    if (resources) {
+      console.log(`Message ${message.role} has ${resources.length} resources`);
     }
     
     return {
       role: message.role.toLowerCase() as 'user' | 'assistant',
       content: message.content,
-      resources: resources
+      resources
     };
   });
-
 
   return (
     <div className="bg-slate-50 flex flex-col md:flex-row h-[calc(100vh-64px)] overflow-hidden">
