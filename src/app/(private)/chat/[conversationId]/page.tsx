@@ -9,6 +9,13 @@ type Params = {
   params: Promise<{conversationId: string}>
 }
 
+// 最小限のメタデータ型定義
+type MessageMetadata = {
+  resources?: unknown[];
+  retriever_resources?: unknown[];
+  [key: string]: unknown;
+};
+
 // 動的パラメータのプロップスを受け取る
 export default async function ChatPage({ params }: Params ) {
 
@@ -41,41 +48,14 @@ export default async function ChatPage({ params }: Params ) {
 
   // メッセージをフォーマット
   const formattedMessages = messages.map(message => {
-    let resources: ResourceInfo[] | undefined = undefined;
-    
-    // メタデータが存在し、オブジェクトの場合に処理
-    if (message.metadata && typeof message.metadata === 'object') {
-      const metadata = message.metadata as any;
-      
-      // resourcesプロパティからリソース情報を取得
-      if (metadata.resources && Array.isArray(metadata.resources)) {
-        resources = metadata.resources.map((resource: any) => ({
-          document_name: resource.document_name || '',
-          segment_position: resource.segment_position || 0,
-          content: resource.content || '',
-          score: resource.score || 0
-        }));
-      }
-      // 後方互換性のために古い形式もチェック
-      else if (metadata.retriever_resources && Array.isArray(metadata.retriever_resources)) {
-        resources = metadata.retriever_resources.map((resource: any) => ({
-          document_name: resource.document_name || '',
-          segment_position: resource.segment_position || 0,
-          content: resource.content || '',
-          score: resource.score || 0
-        }));
-      }
-    }
-    
-    // デバッグ用ログ
-    if (resources) {
-      console.log(`Message ${message.role} has ${resources.length} resources`);
-    }
+    // メタデータから具体的なプロパティを取り出して渡す
+    const metadata = message.metadata as MessageMetadata | null;
+    const resources = metadata?.resources || metadata?.retriever_resources;
     
     return {
       role: message.role.toLowerCase() as 'user' | 'assistant',
       content: message.content,
-      resources
+      resources: Array.isArray(resources) ? resources as ResourceInfo[] : undefined
     };
   });
 
