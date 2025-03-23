@@ -2,8 +2,9 @@
 import { useEffect, useRef, useState, useCallback, useMemo, memo } from 'react';
 import { useChatStore, Message } from '@/store/chatStore';
 import ChatInput from '@/components/ChatInput';
-import ResourceViewer from '@/components/ResourceViewer';
 import AttachmentViewer from '@/components/AttachmentViewer';
+import ResourceViewer from '@/components/ResourceViewer';
+import MarkdownRenderer from '@/components/MarkdownRenderer';
 
 interface ChatContainerProps {
   userId: string;
@@ -69,7 +70,8 @@ const MessageItem = memo(function MessageItemBase({
               {message.id && <span className="ml-1 text-xs text-gray-400">({messageKey.substring(0, 8)}...)</span>}
             </div>
             
-            <p className="whitespace-pre-wrap">{message.content}</p>
+            {/* メッセージ内容をMarkdownRendererで表示 */}
+            <MarkdownRenderer content={message.content} />
 
             {/* 添付ファイルがある場合は表示 */}
             {hasAttachments && message.attachments && (
