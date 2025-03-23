@@ -51,11 +51,21 @@ export default async function ChatPage({ params }: Params ) {
     // メタデータから具体的なプロパティを取り出して渡す
     const metadata = message.metadata as MessageMetadata | null;
     const resources = metadata?.resources || metadata?.retriever_resources;
+
+    // 添付ファイル情報をフォーマット
+    const attachments = message.attachments?.map(attachment => ({
+      fileId: attachment.id,
+      fileName: attachment.name,
+      fileType: attachment.mimeType,
+      fileSize: attachment.size,
+      fileUrl: `/uploads/${attachment.path}`
+    }));
     
     return {
       role: message.role.toLowerCase() as 'user' | 'assistant',
       content: message.content,
-      resources: Array.isArray(resources) ? resources as ResourceInfo[] : undefined
+      resources: Array.isArray(resources) ? resources as ResourceInfo[] : undefined,
+      attachments: attachments && attachments.length > 0 ? attachments : undefined
     };
   });
 

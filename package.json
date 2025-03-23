@@ -27,6 +27,7 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
+    "formdata-node": "^6.0.3",
     "lucide-react": "^0.479.0",
     "next": "15.2.0",
     "next-auth": "^5.0.0-beta.25",
@@ -35,6 +36,7 @@
     "react-dom": "^19.0.0",
     "tailwind-merge": "^3.0.2",
     "tailwindcss-animate": "^1.0.7",
+    "uuid": "^11.1.0",
     "zod": "^3.24.2",
     "zustand": "^5.0.3"
   },
@@ -44,6 +46,7 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@types/uuid": "^10.0.0",
     "eslint": "^9",
     "eslint-config-next": "15.2.0",
     "tailwindcss": "^4",

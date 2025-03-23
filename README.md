@@ -1,4 +1,86 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Dify Next.js チャットアプリケーション
+
+このアプリケーションは、Next.js、Prisma、Dify APIを使用したAIチャットアプリケーションです。
+
+## 機能
+
+- Dify APIを使用したAIチャット
+- 会話履歴の保存と表示
+- リソース（引用情報）の表示
+- マルチファイルアップロード対応（画像、ドキュメント、音声、動画）
+
+## セットアップ手順
+
+### 1. 環境変数の設定
+
+`.env.local.example`を`.env.local`にコピーし、必要な環境変数を設定します。
+
+```bash
+cp .env.local.example .env.local
+```
+
+必要な環境変数:
+
+- `DIFY_API_URL`: Dify APIのURL
+- `DIFY_API_KEY`: Dify APIのアクセスキー
+- `DATABASE_URL`: PostgreSQLデータベースの接続URL
+- `NEXT_PUBLIC_BASE_URL`: アプリケーションのベースURL（ファイルアップロード機能に必要）
+- `SECRET`: JWT認証に使用するシークレット
+
+### 2. 依存関係のインストール
+
+```bash
+npm install
+```
+
+### 3. データベースのセットアップ
+
+```bash
+npx prisma migrate dev
+```
+
+### 4. アプリケーションの実行
+
+開発モード:
+
+```bash
+npm run dev
+```
+
+本番モード:
+
+```bash
+npm run build
+npm start
+```
+
+## ファイルアップロード機能
+
+このアプリケーションでは、以下のタイプのファイルをアップロードしてAIとの会話に添付できます：
+
+- 画像: JPEG, PNG, GIF, WebP
+- ドキュメント: PDF, TXT, DOCX, XLSX, PPTX, CSV
+- 音声: MP3, WAV, OGG
+- 動画: MP4, WebM, OGG
+
+アップロードされたファイルは`public/uploads`ディレクトリに保存され、チャットメッセージとともに表示されます。
+
+### 本番環境でのファイルアップロード設定
+
+1. `NEXT_PUBLIC_BASE_URL`環境変数を正しいドメインに設定してください。
+   例: `NEXT_PUBLIC_BASE_URL=https://your-domain.com`
+
+2. アップロードディレクトリのパーミッションが適切に設定されていることを確認してください。
+   ```bash
+   mkdir -p public/uploads
+   chmod 755 public/uploads
+   ```
+
+3. 大量のファイルアップロードが予想される場合は、クラウドストレージ（AWS S3やGCP Cloud Storage）を使用することをお勧めします。
+
+## ライセンス
+
+[MIT License](LICENSE)
 
 ## Getting Started
 

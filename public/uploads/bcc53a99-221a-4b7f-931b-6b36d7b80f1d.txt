@@ -1,0 +1,24 @@
+const conversation = await getConversation(conversationId, userId)
+  // 会話が見つからない場合は404ページを返す
+  if (!conversation) { notFound() }
+
+  // サーバーで会話一覧を取得
+  const conversations = await getConversations(userId)
+
+  // クライアントに渡す形式に変換
+  const formattedConversations = conversations.map(c => ({
+    conversationId: c.difyConversationId || '',
+    title: c.title || '無題の会話',
+    updatedAt: c.updatedAt.toISOString()
+  }));
+
+  // この会話のメッセージを取得
+  const messages = await getMessages(conversation.id)
+
+  // メッセージをフォーマット
+  const formattedMessages = messages.map(message => ({
+    id: message.id,
+    role: message.role.toLowerCase() as 'user' | 'assistant',
+    content: message.content,
+    createdAt: message.createdAt.toISOString()
+  }));

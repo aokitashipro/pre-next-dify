@@ -32,7 +32,18 @@ export async function getMessages(id: string){
         select: {
           role: true,
           content: true,
-          metadata: true
+          metadata: true,
+          attachments: {
+            select: {
+              id: true,
+              name: true,
+              path: true,
+              size: true,
+              mimeType: true,
+              type: true,
+              metadata: true
+            }
+          }
         }
       });
 }

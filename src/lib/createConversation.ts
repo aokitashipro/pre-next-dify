@@ -1,7 +1,15 @@
 // src/lib/conversation.ts
 import { prisma } from './prisma';
-import { Prisma, MessageRole } from '@prisma/client';
+import { Prisma, MessageRole, FileType } from '@prisma/client';
 import { ResourceInfo } from '@/store/chatStore';
+
+interface FileAttachment {
+  fileId: string;
+  fileName: string;
+  fileType: string;
+  fileSize: number;
+  fileUrl: string;
+}
 
 interface DifyResponse {
   message_id: string;
@@ -19,10 +27,12 @@ interface DifyResponse {
 export async function createConversationAndMessages(
   query: string,
   difyResponse: DifyResponse,
-  userId: string
+  userId: string,
+  attachments: FileAttachment[] = []
 ) {
   console.log('rawdifyResponse:', difyResponse)
   console.log('resources:', difyResponse.metadata?.retriever_resources)
+  console.log('attachments:', attachments)
   
   // 数値の変換処理を改善
   // トークン数を数値型に変換。値がなければ0
@@ -82,32 +92,68 @@ export async function createConversationAndMessages(
       });
 
       // メッセージの作成
-      const [userMessage, assistantMessage] = await Promise.all([
-        tx.message.create({
-          data: {
-            conversationId: conversation.id,
-            content: query,
-            role: MessageRole.USER,
-            difyMessageId: difyResponse.message_id
-          }
-        }),
-        tx.message.create({
-          data: {
-            conversationId: conversation.id,
-            content: difyResponse.answer,
-            role: MessageRole.ASSISTANT,
-            difyMessageId: difyResponse.message_id,
-            metadata: {
-              usage: {
-                ...difyResponse.metadata?.usage,
-                total_price: totalCost // 変換後の数値を使用
-              },
-              // 標準化したリソース情報を保存
-              resources: resources.length > 0 ? resources : undefined
+      const userMessage = await tx.message.create({
+        data: {
+          conversationId: conversation.id,
+          content: query,
+          role: MessageRole.USER,
+          difyMessageId: difyResponse.message_id
+        }
+      });
+
+      // ファイル添付情報をデータベースに保存
+      if (attachments && attachments.length > 0) {
+        // 各ファイルをデータベースに保存
+        const fileUploads = await Promise.all(
+          attachments.map(attachment => {
+            // ファイルタイプを判断
+            let fileType: FileType = FileType.DOCUMENT;
+            if (attachment.fileType.startsWith('image/')) {
+              fileType = FileType.IMAGE;
+            } else if (attachment.fileType.startsWith('audio/')) {
+              fileType = FileType.AUDIO;
+            } else if (attachment.fileType.startsWith('video/')) {
+              fileType = FileType.VIDEO;
             }
+
+            // ファイル情報をデータベースに保存
+            return tx.fileUpload.create({
+              data: {
+                userId,
+                messageId: userMessage.id,
+                type: fileType,
+                name: attachment.fileName,
+                path: attachment.fileUrl.replace(/^\/uploads\//, ''), // パスからプレフィックスを削除
+                size: attachment.fileSize,
+                mimeType: attachment.fileType,
+                metadata: {
+                  fileId: attachment.fileId,
+                  originalUrl: attachment.fileUrl
+                }
+              }
+            });
+          })
+        );
+        
+        console.log(`${fileUploads.length} files saved to database`);
+      }
+
+      const assistantMessage = await tx.message.create({
+        data: {
+          conversationId: conversation.id,
+          content: difyResponse.answer,
+          role: MessageRole.ASSISTANT,
+          difyMessageId: difyResponse.message_id,
+          metadata: {
+            usage: {
+              ...difyResponse.metadata?.usage,
+              total_price: totalCost // 変換後の数値を使用
+            },
+            // 標準化したリソース情報を保存
+            resources: resources.length > 0 ? resources : undefined
           }
-        })
-      ]);
+        }
+      });
 
       return {
         conversation,

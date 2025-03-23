@@ -1,6 +1,7 @@
 // src/store/chatStore.ts
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { persist, createJSONStorage } from 'zustand/middleware';
+import { v4 as uuidv4 } from 'uuid';
 // ResourceInfoをインポートせず、直接定義する
 // import { ResourceInfo } from '@/components/ResourceViewer';
 
@@ -19,17 +20,49 @@ export type ResourceInfo = {
   score: number;
 };
 
+// 添付ファイル情報の型定義
+export type FileAttachment = {
+  fileId?: string;
+  fileName: string;
+  fileSize: number;
+  fileType: string;
+  fileUrl?: string;
+  localId?: string; // 一時的に使用する内部ID
+};
+
 // メッセージの型定義
 export type Message = {
-  role: 'user' | 'assistant';
+  id?: string;
+  role: 'user' | 'assistant' | 'system';
   content: string;
   resources?: ResourceInfo[];
+  attachments?: FileAttachment[]; // 添付ファイル情報を追加
+  createdAt?: number;
 };
 
 // 会話IDごとのリソース情報を管理する型
 type ConversationResources = {
   [conversationId: string]: ResourceInfo[];
 };
+
+// ディープコピー関数を追加
+function deepCopy<T>(obj: T): T {
+  if (obj === null || typeof obj !== 'object') {
+    return obj;
+  }
+
+  if (Array.isArray(obj)) {
+    return obj.map(item => deepCopy(item)) as unknown as T;
+  }
+
+  const copied = {} as T;
+  Object.keys(obj as object).forEach(key => {
+    const typedKey = key as keyof T;
+    copied[typedKey] = deepCopy((obj as T)[typedKey]);
+  });
+
+  return copied;
+}
 
 // ストアの状態の型定義
 interface ChatStore {
@@ -39,9 +72,11 @@ interface ChatStore {
   isLoading: boolean;
   // 会話IDごとのリソース情報
   conversationResources: ConversationResources;
+  resources: Record<string, ResourceInfo[]>; // { conversationId: resources[] }
   
   setLoading: (loading: boolean) => void;
   addMessage: (message: Message) => void;
+  updateMessage: (id: string, content: string) => void;
   setConversationId: (id: string) => void;
   clearMessages: () => void;
   // selectConversation: (conversationId: string, messages: Message[]) => void;
@@ -52,7 +87,27 @@ interface ChatStore {
   // リソース情報関連の関数
   setResources: (conversationId: string, resources: ResourceInfo[]) => void;
   getResources: (conversationId: string) => ResourceInfo[] | null;
+  replaceMessages: (messages: Message[]) => void; // メッセージリストを完全に置き換える
 }
+
+// メッセージに一意のIDを生成する関数
+const generateMessageId = () => `msg-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+
+// メッセージ添付ファイル情報を安全にディープコピーする関数
+const deepCopyAttachments = (attachments?: FileAttachment[]) => {
+  if (!attachments) return undefined;
+  return attachments.map(att => ({...att}));
+};
+
+// メッセージをディープコピーする関数
+const deepCopyMessage = (message: Message): Message => {
+  return {
+    ...message,
+    id: message.id || generateMessageId(),
+    resources: message.resources ? [...message.resources] : undefined,
+    attachments: deepCopyAttachments(message.attachments)
+  };
+};
 
 // zustandストアをpersistミドルウェアで拡張して永続化
 export const useChatStore = create<ChatStore>()(
@@ -65,12 +120,24 @@ export const useChatStore = create<ChatStore>()(
       isLoading: false,
       // 会話IDごとのリソース情報
       conversationResources: {},
+      resources: {},
       
       // アクション
       setLoading: (loading: boolean) => set({ isLoading: loading }),
 
       // メッセージ追加
       addMessage: (message: Message) => set((state) => {
+        console.log(`ChatStore: メッセージを追加 (${message.role})`, 
+          message.attachments ? `添付ファイル: ${message.attachments.length}件` : "添付ファイルなし");
+        
+        if (message.attachments && message.attachments.length > 0) {
+          console.log(`ChatStore: 添付ファイル詳細:`, 
+            message.attachments.map(a => `${a.fileName}(${a.fileId || 'ID未設定'})`));
+        }
+        
+        // メッセージをディープコピーして不変性を保証
+        const messageCopy = deepCopyMessage(message);
+        
         // リソース情報を含むアシスタントメッセージの場合、リソース情報も保存
         if (message.role === 'assistant' && message.resources && message.resources.length > 0 && state.currentConversationId) {
           // 会話IDごとのリソース情報を更新
@@ -80,23 +147,33 @@ export const useChatStore = create<ChatStore>()(
           };
           
           return {
-            currentMessages: [...state.currentMessages, {
-              role: message.role,
-              content: message.content,
-              resources: message.resources
-            }],
+            currentMessages: [...state.currentMessages, messageCopy],
             conversationResources: updatedResources
           };
         }
         
+        // 通常のメッセージ追加
         return {
-          currentMessages: [...state.currentMessages, {
-            role: message.role,
-            content: message.content,
-            resources: message.resources
-          }]
+          currentMessages: [...state.currentMessages, messageCopy]
         };
       }),
+
+      // 特定インデックスのメッセージを更新
+      updateMessage: (id, content) => set((state) => ({
+        currentMessages: state.currentMessages.map(message => 
+          message.id === id ? { ...message, content } : message
+        )
+      })),
+
+      // メッセージリストを完全に置き換え
+      replaceMessages: (messages: Message[]) => {
+        console.log(`ChatStore: メッセージリストを ${messages.length} 件のメッセージで置き換えます`);
+        
+        // 各メッセージをディープコピー
+        const messagesCopy = messages.map(deepCopyMessage);
+        
+        set({ currentMessages: messagesCopy });
+      },
 
       // 会話ID設定
       setConversationId: (id: string) => set({ currentConversationId: id }),
@@ -158,9 +235,13 @@ export const useChatStore = create<ChatStore>()(
     }),
     {
       name: 'dify-chat-storage', // ローカルストレージのキー
+      storage: createJSONStorage(() => localStorage), // 明示的にJSONStorageを使用
       partialize: (state) => ({
         // 永続化する状態のみを指定
         conversationResources: state.conversationResources,
+        currentMessages: state.currentMessages,       // メッセージリストを永続化
+        currentConversationId: state.currentConversationId, // 現在の会話IDも永続化
+        conversations: state.conversations,           // 会話リストも永続化
       }),
     }
   )

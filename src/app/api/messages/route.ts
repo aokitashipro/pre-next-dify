@@ -20,7 +20,7 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // Prismaクエリの実行
+    // Prismaクエリの実行 - ファイル添付情報も含めて取得
     const messages = await prisma.message.findMany({
       where: {
         conversationId: conversationId, // キャメルケースに修正
@@ -35,20 +35,44 @@ export async function GET(request: NextRequest) {
         role: true,
         createdAt: true,
         metadata: true,
+        // ファイル添付情報を含める
+        attachments: {
+          select: {
+            id: true,
+            name: true,
+            path: true,
+            size: true,
+            mimeType: true,
+            type: true,
+            metadata: true
+          }
+        }
       },
     });
 
-    //console.log('Found messages:', messages.length);
+    console.log('Found messages:', messages.length);
 
     // レスポンスデータの整形
-    const formattedMessages = messages.map(msg => ({
-      id: msg.id,
-      conversation_id: msg.conversationId,
-      content: msg.content,
-      role: msg.role,
-      created_at: msg.createdAt,
-      metadata: msg.metadata
-    }));
+    const formattedMessages = messages.map(msg => {
+      // 添付ファイル情報を変換
+      const formattedAttachments = msg.attachments.map(attachment => ({
+        fileId: attachment.id,
+        fileName: attachment.name,
+        fileType: attachment.mimeType,
+        fileSize: attachment.size,
+        fileUrl: `/uploads/${attachment.path}`
+      }));
+
+      return {
+        id: msg.id,
+        conversation_id: msg.conversationId,
+        content: msg.content,
+        role: msg.role,
+        created_at: msg.createdAt,
+        metadata: msg.metadata,
+        attachments: formattedAttachments.length > 0 ? formattedAttachments : undefined
+      };
+    });
 
     return NextResponse.json({
       messages: formattedMessages
