@@ -1,7 +1,12 @@
 'use client';
-import { useState, useRef } from 'react';
-import { Upload, X, File, Image, FileText, Film, Music } from 'lucide-react';
+import React, { useCallback, useState, useRef, useEffect } from 'react';
+import { FileText, Image, Music, Video, X, AlertCircle, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { canUseChat } from '@/lib/actions/usage-actions';
+import {
+  Alert,
+  AlertDescription,
+} from "@/components/ui/alert";
 
 /**
  * サポートされるファイル形式の定義
@@ -34,23 +39,82 @@ interface FileUploadProps {
   selectedFiles: File[];
   /** 選択ファイルを更新する関数 */
   setSelectedFiles: (files: File[]) => void;
+  /** 最大ファイルサイズ (MB) */
+  maxFileSizeMB?: number;
+  /** 最大アップロード数 */
+  maxFiles?: number;
+  /** アップロード無効フラグ */
+  disabled?: boolean;
 }
 
 /**
  * ファイルアップロードコンポーネント
- * ドラッグ&ドロップとファイル選択ダイアログに対応
+ * 
+ * このコンポーネントは、ドラッグ＆ドロップまたはファイル選択ダイアログによる
+ * ファイルのアップロードUIを提供します。以下の機能を持ちます：
+ * - ドラッグ＆ドロップによるファイル選択
+ * - ファイル選択ダイアログによるファイル選択
+ * - ファイルタイプとサイズの検証
+ * - 選択済みファイル一覧の表示と削除
+ * - 使用状況に基づく制限の適用
  */
-export default function FileUpload({ onFilesSelected, selectedFiles, setSelectedFiles }: FileUploadProps) {
+export default function FileUpload({ 
+  onFilesSelected, 
+  selectedFiles, 
+  setSelectedFiles, 
+  maxFileSizeMB = MAX_FILE_SIZE_MB, 
+  maxFiles = 5,
+  disabled = false
+}: FileUploadProps) {
   // ドラッグ操作の状態を管理
   const [dragActive, setDragActive] = useState(false);
   // ファイル入力要素への参照
   const inputRef = useRef<HTMLInputElement>(null);
+  // エラーメッセージ状態
+  const [error, setError] = useState<string | null>(null);
+  // 使用制限状態
+  const [usageStatus, setUsageStatus] = useState<{
+    canUse: boolean;
+    uploadDisabled?: boolean;
+    reason?: string;
+  }>({ canUse: true });
+
+  // マウント時に使用状況をチェック
+  useEffect(() => {
+    async function checkUsageStatus() {
+      try {
+        const result = await canUseChat();
+        setUsageStatus(result);
+      } catch (error) {
+        console.error('ファイルアップロード使用状況のチェックに失敗しました:', error);
+      }
+    }
+    
+    checkUsageStatus();
+  }, []);
 
   /**
    * ファイル選択ダイアログからのファイル追加を処理
    */
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    // アップロード制限チェック
+    if (usageStatus.uploadDisabled) {
+      setError(usageStatus.reason || 'アップロード制限に達しました');
+      return;
+    }
+    
+    if (disabled || !usageStatus.canUse) {
+      setError('アップロードは現在無効です');
+      return;
+    }
+
     if (e.target.files && e.target.files.length > 0) {
+      // 最大ファイル数チェック
+      if (selectedFiles.length + e.target.files.length > maxFiles) {
+        setError(`アップロードできるファイルは最大${maxFiles}個までです`);
+        return;
+      }
+      
       const filesArray = Array.from(e.target.files);
       const validFiles = validateFiles(filesArray);
       
@@ -58,6 +122,7 @@ export default function FileUpload({ onFilesSelected, selectedFiles, setSelected
       const updatedFiles = [...selectedFiles, ...validFiles];
       setSelectedFiles(updatedFiles);
       onFilesSelected(updatedFiles);
+      setError(null);
     }
   };
 
@@ -66,12 +131,14 @@ export default function FileUpload({ onFilesSelected, selectedFiles, setSelected
    * サイズと形式をチェックし、有効なファイルのみを返す
    */
   const validateFiles = (files: File[]): File[] => {
-    return files.filter(file => {
+    const validFiles: File[] = [];
+    
+    for (const file of files) {
       // ファイルサイズのチェック (MB単位)
       const fileSizeMB = file.size / (1024 * 1024);
-      if (fileSizeMB > MAX_FILE_SIZE_MB) {
-        alert(`ファイル ${file.name} のサイズが大きすぎます (最大 ${MAX_FILE_SIZE_MB}MB)`);
-        return false;
+      if (fileSizeMB > maxFileSizeMB) {
+        setError(`ファイル ${file.name} のサイズが大きすぎます (最大 ${maxFileSizeMB}MB)`);
+        continue;
       }
 
       // サポートされているファイル形式かチェック
@@ -80,12 +147,14 @@ export default function FileUpload({ onFilesSelected, selectedFiles, setSelected
       );
       
       if (!isSupported) {
-        alert(`ファイル ${file.name} の形式はサポートされていません`);
-        return false;
+        setError(`ファイル ${file.name} の形式はサポートされていません`);
+        continue;
       }
 
-      return true;
-    });
+      validFiles.push(file);
+    }
+    
+    return validFiles;
   };
 
   /**
@@ -113,7 +182,24 @@ export default function FileUpload({ onFilesSelected, selectedFiles, setSelected
     e.stopPropagation();
     setDragActive(false);
     
+    // アップロード制限チェック
+    if (usageStatus.uploadDisabled) {
+      setError(usageStatus.reason || 'アップロード制限に達しました');
+      return;
+    }
+    
+    if (disabled || !usageStatus.canUse) {
+      setError('アップロードは現在無効です');
+      return;
+    }
+    
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      // 最大ファイル数チェック
+      if (selectedFiles.length + e.dataTransfer.files.length > maxFiles) {
+        setError(`アップロードできるファイルは最大${maxFiles}個までです`);
+        return;
+      }
+      
       const filesArray = Array.from(e.dataTransfer.files);
       const validFiles = validateFiles(filesArray);
       
@@ -121,6 +207,7 @@ export default function FileUpload({ onFilesSelected, selectedFiles, setSelected
       const updatedFiles = [...selectedFiles, ...validFiles];
       setSelectedFiles(updatedFiles);
       onFilesSelected(updatedFiles);
+      setError(null);
     }
   };
 
@@ -132,6 +219,7 @@ export default function FileUpload({ onFilesSelected, selectedFiles, setSelected
     newFiles.splice(index, 1);
     setSelectedFiles(newFiles);
     onFilesSelected(newFiles);
+    setError(null);
   };
 
   /**
@@ -145,22 +233,56 @@ export default function FileUpload({ onFilesSelected, selectedFiles, setSelected
     } else if (ACCEPTED_FILE_TYPES.document.includes(fileType)) {
       return <FileText className="w-5 h-5" />;
     } else if (ACCEPTED_FILE_TYPES.video.includes(fileType)) {
-      return <Film className="w-5 h-5" />;
+      return <Video className="w-5 h-5" />;
     } else if (ACCEPTED_FILE_TYPES.audio.includes(fileType)) {
       return <Music className="w-5 h-5" />;
     }
     
-    return <File className="w-5 h-5" />;
+    return <FileText className="w-5 h-5" />;
+  };
+
+  /**
+   * ファイルのサイズをフォーマット
+   */
+  const formatFileSize = (size: number): string => {
+    if (size < 1024) {
+      return `${size} B`;
+    } else if (size < 1024 * 1024) {
+      return `${(size / 1024).toFixed(1)} KB`;
+    } else {
+      return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+    }
+  };
+
+  // アップロードが無効かどうか
+  const isUploadDisabled = disabled || usageStatus.uploadDisabled || !usageStatus.canUse;
+
+  // 使用制限に達している場合のアラート
+  const renderUsageAlert = () => {
+    if (!usageStatus.canUse && usageStatus.reason) {
+      return (
+        <Alert variant="destructive" className="mb-3">
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>
+            {usageStatus.reason}
+          </AlertDescription>
+        </Alert>
+      );
+    }
+    return null;
   };
 
   return (
-    <div className="w-full">
+    <div className="w-full bg-white p-4 rounded-md border">
+      {/* 使用制限アラート */}
+      {renderUsageAlert()}
+      
       {/* ファイルアップロードエリア */}
       <div
         className={`border-2 border-dashed rounded-md p-4 text-center cursor-pointer ${
           dragActive ? 'border-blue-500 bg-blue-50' : 'border-gray-300'
-        }`}
-        onClick={() => inputRef.current?.click()}
+        } ${isUploadDisabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+        onClick={() => !isUploadDisabled && inputRef.current?.click()}
         onDragEnter={handleDrag}
         onDragLeave={handleDrag}
         onDragOver={handleDrag}
@@ -175,31 +297,47 @@ export default function FileUpload({ onFilesSelected, selectedFiles, setSelected
           className="hidden"
           accept={Object.values(ACCEPTED_FILE_TYPES).flat().join(',')}
           aria-label="ファイル選択"
+          disabled={isUploadDisabled}
         />
-        <Upload className="w-8 h-8 mx-auto text-gray-400" />
-        <p className="mt-2 text-sm text-gray-600">
-          クリックまたはファイルをドラッグ＆ドロップ
-        </p>
-        <p className="text-xs text-gray-500">
-          画像、ドキュメント、音声、動画をサポート (最大 {MAX_FILE_SIZE_MB}MB)
-        </p>
+        
+        {dragActive ? (
+          <p className="text-blue-500">ファイルをここにドロップ...</p>
+        ) : (
+          <div className="space-y-2">
+            <Plus className="mx-auto h-8 w-8 text-gray-400" />
+            <p className="text-sm text-gray-500">
+              {isUploadDisabled 
+                ? (usageStatus.reason || 'アップロードは現在無効です') 
+                : 'クリックまたはドラッグ&ドロップでファイルをアップロード'}
+            </p>
+            <p className="text-xs text-gray-400">
+              最大{maxFiles}ファイル、各{maxFileSizeMB}MBまで
+            </p>
+          </div>
+        )}
       </div>
+
+      {error && (
+        <div className="mt-2 text-sm text-red-500">
+          <p>{error}</p>
+        </div>
+      )}
 
       {/* 選択されたファイル一覧 */}
       {selectedFiles.length > 0 && (
         <div className="mt-4">
-          <h4 className="text-sm font-medium mb-2">添付ファイル ({selectedFiles.length})</h4>
-          <div className="space-y-2">
+          <h4 className="text-sm font-medium">添付ファイル ({selectedFiles.length})</h4>
+          <div className="space-y-2 mt-2">
             {selectedFiles.map((file, index) => (
               <div
-                key={index}
+                key={`${file.name}-${index}`}
                 className="flex items-center justify-between p-2 bg-gray-50 rounded-md"
               >
-                <div className="flex items-center space-x-2">
+                <div className="flex items-center space-x-2 max-w-[85%]">
                   {getFileIcon(file)}
-                  <span className="text-sm truncate max-w-[200px]">{file.name}</span>
+                  <span className="text-sm truncate">{file.name}</span>
                   <span className="text-xs text-gray-500">
-                    {(file.size / (1024 * 1024)).toFixed(2)} MB
+                    {formatFileSize(file.size)}
                   </span>
                 </div>
                 <Button
@@ -210,6 +348,7 @@ export default function FileUpload({ onFilesSelected, selectedFiles, setSelected
                     removeFile(index);
                   }}
                   aria-label={`${file.name}を削除`}
+                  className="h-6 w-6 p-0"
                 >
                   <X className="w-4 h-4" />
                 </Button>
