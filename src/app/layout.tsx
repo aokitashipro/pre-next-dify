@@ -1,6 +1,7 @@
 import "./globals.css";
 import { ensureDirectories } from '@/lib/ensureDirectories';
 import 'highlight.js/styles/github.css';
+import { Toaster } from '@/components/ui/toaster';
 
 // サーバー起動時に必要なディレクトリを作成
 ensureDirectories().catch(console.error);
@@ -19,6 +20,7 @@ export default function RootLayout({
     <html lang="ja">
       <body>
         {children}
+        <Toaster />
       </body>
     </html>
   );

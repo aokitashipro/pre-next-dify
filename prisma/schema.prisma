@@ -25,6 +25,7 @@ model User {
   
   // リレーション
   subscription  Subscription?
+  stripeCustomer StripeCustomer?
   conversations Conversation[]
   usageStats    UsageStat[]
   uploadedFiles FileUpload[]
@@ -37,21 +38,34 @@ enum UserRole {
   USER
 }
 
+// Stripeカスタマー管理
+model StripeCustomer {
+  id              String     @id @default(cuid())
+  userId          String     @unique
+  user            User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  stripeCustomerId String    @unique
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  @@map("stripe_customers")
+}
+
 // サブスクリプション管理
 model Subscription {
   id                   String             @id @default(cuid())
   userId               String             @unique
   user                 User               @relation(fields: [userId], references: [id], onDelete: Cascade)
-  stripeCustomerId     String?            @unique
+  stripeCustomerId     String?
   stripePriceId        String?
-  stripeSubscriptionId String?
-  status               SubscriptionStatus
+  stripeSubscriptionId String?            @unique
+  status               SubscriptionStatus @default(ACTIVE)
   plan                 PlanType           @default(FREE)
   currentPeriodStart   DateTime?
   currentPeriodEnd     DateTime?
   cancelAtPeriodEnd    Boolean            @default(false)
   createdAt            DateTime           @default(now())
   updatedAt            DateTime           @updatedAt
+  endsAt               DateTime?          // サブスクリプション終了日
 
   @@map("subscriptions")
 }

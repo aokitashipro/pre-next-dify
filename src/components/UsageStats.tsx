@@ -15,6 +15,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Button } from '@/components/ui/button';
 import { getUsageSummary } from '@/lib/actions/usage-actions';
 import { useRouter } from 'next/navigation';
+import SubscriptionButton from '@/components/SubscriptionButton';
 
 // コンポーネントのプロパティ定義
 interface UsageStatsProps {
@@ -101,6 +102,17 @@ export default function UsageStats({ className }: UsageStatsProps) {
   const maxCost = 8; // $8.00の月間上限
   const costPercentage = (estimatedCost / maxCost) * 100;
 
+  // サブスクリプション解約予定の情報
+  const isCancelled = subscription?.cancelAtPeriodEnd || false;
+  const subscriptionEndsAt = subscription?.currentPeriodEnd;
+  const formattedEndDate = subscriptionEndsAt 
+    ? new Date(subscriptionEndsAt).toLocaleDateString('ja-JP', { 
+      year: 'numeric', 
+      month: 'long', 
+      day: 'numeric' 
+    })
+    : null;
+
   // カードコンポーネントでレイアウト
   return (
     <Card className={className}>
@@ -112,6 +124,11 @@ export default function UsageStats({ className }: UsageStatsProps) {
             ? '今月の使用状況（$8の使用制限）'
             : '今月の無料枠の使用状況'}
         </CardDescription>
+        {isProPlan && isCancelled && formattedEndDate && (
+          <p className="mt-2 text-amber-600 font-medium">
+            ※ このプランは解約済みです。{formattedEndDate}まで有効です。
+          </p>
+        )}
       </CardHeader>
 
       {/* メインコンテンツ */}
@@ -183,13 +200,10 @@ export default function UsageStats({ className }: UsageStatsProps) {
       {/* フッター - 無料プランのみ表示 */}
       {!isProPlan && (
         <CardFooter>
-          <Button 
-            variant="default"
+          <SubscriptionButton 
+            currentPlan={PlanType.FREE}
             className="w-full"
-            onClick={() => router.push('/pricing')}
-          >
-            プランをアップグレード
-          </Button>
+          />
         </CardFooter>
       )}
     </Card>
