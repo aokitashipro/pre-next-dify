@@ -7,35 +7,44 @@ import { useChatStore, Message, FileAttachment } from '@/store/chatStore';
 import FileUpload from '@/components/FileUpload';
 import { Paperclip, X } from 'lucide-react';
 
+/**
+ * チャット入力コンポーネントのプロパティ
+ */
 interface ChatInputProps {
+  /** ユーザーID */
   userId: string;
+  /** 会話ID (新規会話の場合はundefined) */
   conversationId?: string;
 }
 
+/**
+ * チャット入力コンポーネント
+ * テキスト入力とファイルアップロード機能を提供
+ */
 export default function ChatInput({ userId, conversationId }: ChatInputProps) {
   const router = useRouter();
+  
+  // chatStoreから必要な状態と関数を取得
   const { 
     currentMessages, 
     conversations, 
     currentConversationId, 
-    isLoading,           // storeから取得
+    isLoading,
     addMessage, 
-    updateMessage,       // 個別メッセージ更新用
-    replaceMessages,     // メッセージ一括置換用
+    updateMessage,
+    replaceMessages,
     setConversationId, 
-    setLoading,          // storeのsetLoading関数
+    setLoading,
     setConversations, 
     clearMessages,
     setResources
   } = useChatStore();
-
-  // conversationIdはpropsで受け取る
-  const currentConversationIdState = conversationId;
   
   // 入力と選択ファイルの状態
   const [inputValue, setInputValue] = useState('');
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [showFileUpload, setShowFileUpload] = useState(false);
+  
   // 添付ファイルの状態追跡用参照
   const latestUserMessageRef = useRef<{index: number, messageId?: string}>({index: -1});
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -47,8 +56,12 @@ export default function ChatInput({ userId, conversationId }: ChatInputProps) {
     }
   }, [conversationId, setConversationId]);
 
-  // 添付ファイル情報を更新する関数をメモ化
+  /**
+   * 添付ファイル情報を更新する関数
+   * ユーザーメッセージの添付ファイル情報をサーバーからの応答で更新
+   */
   const updateAttachmentInfo = useCallback((userMsgIndex: number, responseAttachments: FileAttachment[]) => {
+    // インデックスの有効性をチェック
     if (userMsgIndex < 0 || userMsgIndex >= currentMessages.length) {
       console.error("有効なユーザーメッセージインデックスがありません");
       return false;
@@ -56,6 +69,7 @@ export default function ChatInput({ userId, conversationId }: ChatInputProps) {
 
     const userMsg = currentMessages[userMsgIndex];
     
+    // 更新対象メッセージのバリデーション
     if (userMsg.role !== 'user' || !userMsg.attachments || userMsg.attachments.length === 0) {
       console.error("更新対象のユーザーメッセージには添付ファイルがありません");
       return false;
@@ -76,20 +90,15 @@ export default function ChatInput({ userId, conversationId }: ChatInputProps) {
         return att;
       });
       
-      // メッセージの一部のみを更新（参照は変えず、プロパティのみ更新）
-      const updatedMsg = {
+      // メッセージを更新して状態を変更
+      const updatedMessages = [...currentMessages];
+      updatedMessages[userMsgIndex] = {
         ...userMsg,
         attachments: updatedAttachments
       };
       
-      // 現在のすべてのメッセージをコピー
-      const allMessages = [...currentMessages];
-      
-      // 特定のメッセージだけを置き換え
-      allMessages[userMsgIndex] = updatedMsg;
-      
-      // 完全に置き換える（一括更新）
-      replaceMessages(allMessages);
+      // メッセージリストを置き換え
+      replaceMessages(updatedMessages);
       
       console.log("添付ファイル情報の更新が完了しました");
       return true;
@@ -99,11 +108,17 @@ export default function ChatInput({ userId, conversationId }: ChatInputProps) {
     }
   }, [currentMessages, replaceMessages]);
 
+  /**
+   * FileUploadコンポーネントからファイル選択を受け取るコールバック
+   */
   const handleFilesSelected = (files: File[]) => {
     setSelectedFiles(files);
   };
 
-  // ファイルのアップロードを処理する関数
+  /**
+   * ファイルのアップロードを処理する関数
+   * 専用のアップロードAPIを使用
+   */
   const uploadFiles = async (files: File[]): Promise<FileAttachment[]> => {
     if (!files.length) return [];
     
@@ -112,9 +127,7 @@ export default function ChatInput({ userId, conversationId }: ChatInputProps) {
       const formData = new FormData();
       
       // 各ファイルをFormDataに追加
-      for (const file of files) {
-        formData.append('files', file);
-      }
+      files.forEach(file => formData.append('files', file));
       
       // APIエンドポイントにアップロード
       const response = await fetch('/api/upload', {
@@ -137,19 +150,34 @@ export default function ChatInput({ userId, conversationId }: ChatInputProps) {
     }
   };
 
-  // ファイル選択ハンドラ
+  /**
+   * 入力フィールドからのファイル選択を処理
+   */
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
+      // 選択されたファイルを既存の配列に追加
       const newFiles = Array.from(e.target.files);
       setSelectedFiles(prev => [...prev, ...newFiles]);
+      
       // ファイル選択後にinputの値をリセット（同じファイルを連続で選択できるように）
       e.target.value = '';
     }
   };
 
-  // フォーム送信ハンドラ
+  /**
+   * ファイル添付ボタンのクリックハンドラ
+   */
+  const handleAttachmentClick = useCallback(() => {
+    setShowFileUpload(prev => !prev);
+  }, []);
+
+  /**
+   * チャット送信時のフォーム処理
+   */
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // 入力がない場合は何もしない（空白のみの場合も送信しない）
     if (!inputValue.trim() && selectedFiles.length === 0) return;
     
     // 送信前にローディング状態を設定
@@ -184,6 +212,7 @@ export default function ChatInput({ userId, conversationId }: ChatInputProps) {
       // 入力フィールドをクリア
       setInputValue('');
       setSelectedFiles([]);
+      setShowFileUpload(false);
       
       // FormDataを使用してAPIリクエストを準備
       const formData = new FormData();
@@ -196,9 +225,7 @@ export default function ChatInput({ userId, conversationId }: ChatInputProps) {
       
       // ファイルを直接FormDataに追加
       if (selectedFiles.length > 0) {
-        for (const file of selectedFiles) {
-          formData.append('files', file);
-        }
+        selectedFiles.forEach(file => formData.append('files', file));
         console.log(`${selectedFiles.length}個のファイルを添付してAPIリクエストを送信します`);
       }
       
@@ -224,63 +251,38 @@ export default function ChatInput({ userId, conversationId }: ChatInputProps) {
         const userMessageIndex = currentMessages.findIndex(msg => msg.id === userMessageId);
         
         if (userMessageIndex !== -1 && serverFiles.length > 0) {
-          // クライアント側の添付ファイル情報とサーバー側の情報をマージ
-          const userMessage = currentMessages[userMessageIndex];
-          
-          if (userMessage.attachments && userMessage.attachments.length > 0) {
-            // サーバー側の情報でクライアント側の情報を更新
-            const updatedAttachments = userMessage.attachments.map((attachment, index) => {
-              if (index < serverFiles.length) {
-                const serverFile = serverFiles[index];
-                // サーバー情報でクライアント情報を更新
-                return {
-                  ...attachment,
-                  fileId: serverFile.fileId,
-                  fileUrl: serverFile.fileUrl
-                };
-              }
-              return attachment;
-            });
-            
-            // 更新されたメッセージを作成
-            const updatedMessage = {
-              ...userMessage,
-              attachments: updatedAttachments
-            };
-            
-            // メッセージストアを直接更新
-            useChatStore.setState((state) => ({
-              currentMessages: state.currentMessages.map((msg) => 
-                msg.id === userMessageId ? updatedMessage : msg
-              )
-            }));
-            
-            console.log('ユーザーメッセージの添付ファイル情報を更新しました:', updatedAttachments);
-          }
+          // 添付ファイル情報を更新
+          updateAttachmentInfo(userMessageIndex, serverFiles);
         }
         
-        // アシスタントのメッセージを追加
+        // アシスタントの応答を追加
         addMessage({
           role: 'assistant',
           content: data.answer,
-          resources: data.resources || []
+          resources: data.resources || [],
         });
         
-        // リソースがある場合は保存
-        if (data.resources && data.resources.length > 0 && conversationId) {
-          console.log(`ChatInput: ${data.resources.length}件のリソースを保存します`);
-          setResources(conversationId, data.resources);
+        // 会話履歴から会話IDを取得
+        const newConversationId = data.conversation_id;
+        
+        // 新しい会話IDがある場合は、そのIDで会話を更新
+        if (newConversationId && !conversationId) {
+          setConversationId(newConversationId);
+          
+          // URLを更新（会話ページへ遷移）
+          router.push(`/chat/${newConversationId}`);
         }
       }
     } catch (error) {
-      console.error('送信中にエラーが発生しました:', error);
+      console.error('メッセージ送信中にエラーが発生しました:', error);
+      
       // エラーメッセージを表示
       addMessage({
         role: 'assistant',
-        content: 'すみません、エラーが発生しました。もう一度お試しください。'
+        content: 'メッセージの送信中にエラーが発生しました。もう一度お試しください。',
       });
     } finally {
-      // 処理完了後にローディング状態を解除
+      // ローディング状態を解除
       setLoading(false);
     }
   };
@@ -303,7 +305,7 @@ export default function ChatInput({ userId, conversationId }: ChatInputProps) {
             type="button"
             variant="ghost"
             size="icon"
-            onClick={() => setShowFileUpload(!showFileUpload)}
+            onClick={handleAttachmentClick}
             className="flex-shrink-0"
           >
             {showFileUpload ? <X className="h-5 w-5" /> : <Paperclip className="h-5 w-5" />}

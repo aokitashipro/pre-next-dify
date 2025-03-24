@@ -31,6 +31,69 @@ const useLogAttachments = (messages: Message[]) => {
   }, [messages]);
 };
 
+// メッセージのロールバッジコンポーネント
+const RoleBadge = memo(({ role, messageId, messageKey }: { role: string, messageId?: string, messageKey: string }) => (
+  <div className="text-xs text-gray-500 mb-1">
+    {role === 'user' ? 'あなた' : 'アシスタント'}
+    {messageId && <span className="ml-1 text-xs text-gray-400">({messageKey.substring(0, 8)}...)</span>}
+  </div>
+));
+
+// 添付ファイルセクションコンポーネント
+const AttachmentSection = memo(({ attachments, messageKey }: { attachments: any[], messageKey: string }) => (
+  <div className="mt-3">
+    <AttachmentViewer 
+      attachments={attachments} 
+      key={`attach-${messageKey}`}
+    />
+    {/* デバッグ用：添付ファイルの情報を表示 */}
+    <div className="text-xs text-gray-400 mt-1">
+      添付ファイル: {attachments?.length || 0}件
+      {attachments?.map((att, i) => (
+        <div key={`att-${messageKey}-${i}`} className="pl-2">
+          {att.fileName} 
+          {att.fileUrl ? '✓' : '×'}
+        </div>
+      ))}
+    </div>
+  </div>
+));
+
+// メッセージバブルコンポーネント
+const MessageBubble = memo(({ message, messageKey, hasAttachments }: { 
+  message: Message, 
+  messageKey: string, 
+  hasAttachments: boolean | undefined 
+}) => (
+  <div className={`max-w-[75%] p-3 rounded-lg ${
+    message.role === 'user'
+      ? 'bg-white border border-slate-200'
+      : 'bg-gray-100 text-gray-800'
+  }`}>
+    <RoleBadge 
+      role={message.role} 
+      messageId={message.id} 
+      messageKey={messageKey} 
+    />
+    
+    <MarkdownRenderer content={message.content} />
+
+    {hasAttachments && message.attachments && (
+      <AttachmentSection 
+        attachments={message.attachments} 
+        messageKey={messageKey} 
+      />
+    )}
+  </div>
+));
+
+// リソースセクションコンポーネント
+const ResourceSection = memo(({ resources }: { resources: any[] }) => (
+  <div className="mt-2 ml-2">
+    <ResourceViewer resources={resources} />
+  </div>
+));
+
 // Messageコンポーネントを抽出してメモ化
 const MessageItem = memo(function MessageItemBase({ 
   message, 
@@ -55,55 +118,26 @@ const MessageItem = memo(function MessageItemBase({
       `${a.fileName} (URL=${a.fileUrl?.substring(0, 20) || 'なし'}, ID=${a.fileId || 'なし'})`));
   }
   
+  const hasResources = message.role === 'assistant' && 
+    Array.isArray(message.resources) && 
+    message.resources?.length > 0 && 
+    resourcesVisible;
+  
   return (
     <div key={messageKey} className="mb-4">
       <div className="flex flex-col">
         <div className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-          <div className={`max-w-[75%] p-3 rounded-lg ${
-            message.role === 'user'
-              ? 'bg-white border border-slate-200'
-              : 'bg-gray-100 text-gray-800'
-          }`}>
-            {/* ロール表示 */}
-            <div className="text-xs text-gray-500 mb-1">
-              {message.role === 'user' ? 'あなた' : 'アシスタント'}
-              {message.id && <span className="ml-1 text-xs text-gray-400">({messageKey.substring(0, 8)}...)</span>}
-            </div>
-            
-            {/* メッセージ内容をMarkdownRendererで表示 */}
-            <MarkdownRenderer content={message.content} />
-
-            {/* 添付ファイルがある場合は表示 */}
-            {hasAttachments && message.attachments && (
-              <div className="mt-3">
-                <AttachmentViewer 
-                  attachments={message.attachments} 
-                  key={`attach-${messageKey}`}
-                />
-                {/* デバッグ用：添付ファイルの情報を表示 */}
-                <div className="text-xs text-gray-400 mt-1">
-                  添付ファイル: {message.attachments?.length || 0}件
-                  {message.attachments?.map((att, i) => (
-                    <div key={`att-${messageKey}-${i}`} className="pl-2">
-                      {att.fileName} 
-                      {att.fileUrl ? '✓' : '×'}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
+          <MessageBubble 
+            message={message} 
+            messageKey={messageKey} 
+            hasAttachments={hasAttachments} 
+          />
         </div>
         
-        {/* そのメッセージにリソースがある場合にのみ、直下にリソースビューアーを表示 */}
-        {message.role === 'assistant' && 
-          Array.isArray(message.resources) && 
-           message.resources?.length > 0 && 
-           resourcesVisible && (
-            <div className="mt-2 ml-2">
-              <ResourceViewer resources={message.resources || []} />
-            </div>
-          )}
+        {/* リソース表示 */}
+        {hasResources && message.resources && (
+          <ResourceSection resources={message.resources} />
+        )}
       </div>
     </div>
   );
@@ -133,6 +167,16 @@ const MessageItem = memo(function MessageItemBase({
   
   return true;
 });
+
+// 空のチャット表示コンポーネント
+const EmptyChat = memo(() => (
+  <div className="flex items-center justify-center h-full">
+    <div className="text-center text-gray-500">
+      <h3 className="text-lg font-medium">会話を始めましょう</h3>
+      <p className="text-sm">メッセージを入力してAIとチャットを開始できます</p>
+    </div>
+  </div>
+));
 
 export default function ChatContainer({ userId, initialMessages = [], conversationId }: ChatContainerProps) {
   const resourcesVisible = true;
@@ -178,14 +222,7 @@ export default function ChatContainer({ userId, initialMessages = [], conversati
   // メッセージリストをレンダリングする関数
   const renderMessageList = useCallback(() => {
     if (currentMessages.length === 0) {
-      return (
-        <div className="flex items-center justify-center h-full">
-          <div className="text-center text-gray-500">
-            <h3 className="text-lg font-medium">会話を始めましょう</h3>
-            <p className="text-sm">メッセージを入力してAIとチャットを開始できます</p>
-          </div>
-        </div>
-      );
+      return <EmptyChat />;
     }
     
     return (
